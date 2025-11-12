@@ -1,0 +1,12 @@
+pandas>=2.0.0
+openai-whisper>=20231117
+torch>=2.0.0
+yt-dlp>=2023.10.13
+
+# Note: Install ffmpeg binary separately
+# conda install -c conda-forge ffmpeg
+
+# For GPU support, install PyTorch with CUDA:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+
