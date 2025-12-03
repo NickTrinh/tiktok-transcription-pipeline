@@ -41,7 +41,8 @@ class TikTokTranscriptionPipeline:
         whisper_model: str = "base",
         keep_audio: bool = False,  # Changed default to False to save storage
         device: Optional[str] = None,  # 'cuda', 'cpu', or None for auto-detect
-        num_workers: int = 1  # Number of parallel workers
+        num_workers: int = 1,  # Number of parallel workers
+        max_duration: int = 250  # Max video duration in seconds (default: 250s)
     ):
         """
         Initialize the pipeline.
@@ -54,12 +55,14 @@ class TikTokTranscriptionPipeline:
             keep_audio: Whether to keep audio files after transcription (default: False to save space)
             device: Device for Whisper inference ('cuda', 'cpu', or None for auto-detect)
             num_workers: Number of parallel workers for processing videos
+            max_duration: Maximum video duration in seconds (skip longer videos)
         """
         self.csv_path = csv_path
         self.output_dir = Path(output_dir)
         self.audio_format = audio_format
         self.keep_audio = keep_audio
         self.num_workers = num_workers
+        self.max_duration = max_duration
         self.lock = Lock()  # Thread-safe file writing
         
         # Detect and set device
@@ -165,6 +168,10 @@ class TikTokTranscriptionPipeline:
             return audio_path
         
         try:
+            # Add delay to avoid rate limiting
+            import random
+            time.sleep(random.uniform(1, 3))  # Random delay 1-3 seconds
+            
             # yt-dlp command to download audio only
             command = [
                 "yt-dlp",
@@ -201,6 +208,21 @@ class TikTokTranscriptionPipeline:
             logger.error(f"✗ Download error for {video_id}: {str(e)}")
             return None
     
+    def get_audio_duration(self, audio_path: Path) -> float:
+        """Get audio duration using ffprobe."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', str(audio_path)],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return float(result.stdout.strip())
+        except:
+            return 0
+    
     def transcribe_audio(self, audio_path: Path, video_id: str) -> Optional[Dict]:
         """
         Transcribe audio using Whisper.
@@ -213,12 +235,19 @@ class TikTokTranscriptionPipeline:
             Dictionary with transcription results, or None if failed
         """
         try:
-            # Transcribe using Whisper
+            # Check duration before transcribing
+            duration = self.get_audio_duration(audio_path)
+            if duration > self.max_duration:
+                logger.warning(f"⊘ Video too long ({duration:.0f}s > {self.max_duration}s), skipping")
+                return {'skip': True, 'reason': f'Skipped: video too long ({duration:.0f}s > {self.max_duration}s limit)'}
+            
+            # Transcribe using Whisper with FP16 for GPU acceleration
             result = self.whisper_model.transcribe(
                 str(audio_path),
                 verbose=False,
                 language=None,
-                task="transcribe"
+                task="transcribe",
+                fp16=(self.device == 'cuda')  # Enable FP16 for GPU
             )
             
             # Get video duration from segments
@@ -282,6 +311,15 @@ class TikTokTranscriptionPipeline:
                     'username': username,
                     'video_url': video_url,
                     'error': 'Transcription failed'
+                }
+            
+            # Check if video was skipped due to length
+            if transcription.get('skip'):
+                return False, {
+                    'video_id': video_id_str,
+                    'username': username,
+                    'video_url': video_url,
+                    'error': transcription['reason']
                 }
             
             # Calculate processing time
@@ -415,11 +453,12 @@ def main():
     INPUT_DIR = "raw_csv"  # Directory with CSV files
     OUTPUT_DIR = "results"
     AUDIO_FORMAT = "mp3"
-    WHISPER_MODEL = "small"  # Options: tiny, base, small, medium, large
+    WHISPER_MODEL = "base"  # Options: tiny, base, small, medium, large
     KEEP_AUDIO = False  # Auto-delete audio after transcription
     MAX_VIDEOS = None  # Set to a number to test with fewer videos
     DEVICE = None  # None = auto-detect, 'cuda' = GPU, 'cpu' = CPU
-    NUM_WORKERS = 1  # For GPU: use 1 worker (GPU processes faster sequentially)
+    NUM_WORKERS = 1  # For GPU: use 1 worker (GPU processes faster sequentiall0y)
+    MAX_DURATION = 250  # Max video duration in seconds (250s = 4.2 min)
     
     print(f"\nTikTok Transcription Pipeline")
     print(f"Model: {WHISPER_MODEL}")
@@ -454,7 +493,8 @@ def main():
             whisper_model=WHISPER_MODEL,
             keep_audio=KEEP_AUDIO,
             device=DEVICE,
-            num_workers=NUM_WORKERS
+            num_workers=NUM_WORKERS,
+            max_duration=MAX_DURATION
         )
         
         pipeline.run(max_videos=MAX_VIDEOS)

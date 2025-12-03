@@ -21,6 +21,7 @@ Edit `tiktok_transcription_pipeline.py`:
 - `WHISPER_MODEL` - tiny|base|small|medium|large
 - `DEVICE` - None (auto-detect) | 'cuda' (force GPU) | 'cpu' (force CPU)
 - `NUM_WORKERS` - 1 for GPU | 3-5 for CPU
+- `MAX_DURATION` - Skip videos longer than N seconds (default: 600 = 10 min)
 
 ### GPU vs CPU:
 - **GPU (RTX 3050)**: 5-10x faster, use `small` or `medium` model, `NUM_WORKERS=1`
