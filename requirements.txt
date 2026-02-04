@@ -3,6 +3,7 @@ openai-whisper>=20231117
 tqdm>=4.65.0
 torch>=2.0.0
 yt-dlp>=2023.10.13
+pyarrow  # For parquet file support
 
 # Analysis packages
 seaborn
