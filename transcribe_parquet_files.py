@@ -32,13 +32,22 @@ def process_parquet_file(parquet_path, output_dir="transcribed_parquet",
     print(f"Processing: {parquet_path.name}")
     print("="*70)
     
-    # Read parquet file
-    try:
-        df = pd.read_parquet(parquet_path)
-        print(f"✓ Loaded {len(df)} rows")
-    except Exception as e:
-        print(f"✗ Error reading parquet: {e}")
-        return None
+    # Prefer existing output so we skip already-transcribed videos when resuming
+    output_path = Path(output_dir) / parquet_path.name
+    if output_path.exists():
+        try:
+            df = pd.read_parquet(output_path)
+            print(f"✓ Loaded existing output ({len(df)} rows) - will skip already-transcribed")
+        except Exception:
+            df = pd.read_parquet(parquet_path)
+            print(f"✓ Loaded from raw ({len(df)} rows)")
+    else:
+        try:
+            df = pd.read_parquet(parquet_path)
+            print(f"✓ Loaded from raw ({len(df)} rows)")
+        except Exception as e:
+            print(f"✗ Error reading parquet: {e}")
+            return None
     
     # Validate columns
     required_cols = ['username', 'id']
